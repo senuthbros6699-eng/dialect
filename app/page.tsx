@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-// NOTE: Using the specific import path from user's environment
 import { supabase } from "../lib/supabase.js/supabase"; 
 import { 
   MessageSquare, Hash, Users, Search, 
@@ -32,7 +31,6 @@ const UserProfile = ({ username, currentUser, onClose }: any) => {
 
       if (posts) {
         setUserPosts(posts);
-        // Calculate stats (Safe calculation preventing negatives)
         const totalLikes = posts.reduce((acc, post) => acc + Math.max(0, post.likes_count || 0), 0);
         setStats({ postCount: posts.length, totalLikes });
       }
@@ -561,6 +559,8 @@ const ThreadCard = ({ post, currentUser, onUserClick, profileMap }: any) => {
   );
 };
 
+// ... (SidebarItem and TabButton components remain unchanged) ...
+
 const SidebarItem = ({ icon: Icon, label, active, onClick }: any) => (
   <div 
     onClick={onClick}
@@ -813,11 +813,18 @@ export default function Home() {
 
                {viewMode === 'threads' && (
                   <div className="animate-in fade-in duration-300">
+                      
+                      {/* --- CREATE POST BOX --- */}
                       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 mb-4">
                          <div className="flex gap-3">
                             {user ? (
-                                <div className="w-10 h-10 rounded-full bg-indigo-600 flex items-center justify-center text-white font-bold text-xs shrink-0">
-                                    {user.email[0].toUpperCase()}
+                                <div className="w-10 h-10 rounded-full bg-indigo-600 flex items-center justify-center text-white text-xs shrink-0">
+                                    {/* FIX: Use custom avatar if available, otherwise fallback to initial letter */}
+                                    {profilesMap[user.email.split('@')[0]]?.avatar_url ? (
+                                        <img src={profilesMap[user.email.split('@')[0]].avatar_url} alt="avatar" className="w-full h-full rounded-full object-cover" />
+                                    ) : (
+                                        user.email[0].toUpperCase()
+                                    )}
                                 </div>
                             ) : (
                                 <div className="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center text-gray-500 shrink-0">
@@ -856,6 +863,7 @@ export default function Home() {
                          </div>
                       </div>
                       
+                      {/* THREAD LIST */}
                       {posts.length === 0 ? (
                          <div className="text-center py-10 text-gray-500 bg-white rounded-lg border border-gray-200 border-dashed">
                              <p>No posts yet. Be the first to start the conversation!</p>
