@@ -5,8 +5,99 @@ import { supabase } from "../lib/supabase.js/supabase";
 import { 
   MessageSquare, Hash, Users, Search, 
   Share2, Send, Home as HomeIcon, TrendingUp, ThumbsUp, LogIn, LogOut, X, Loader2,
-  Plus, DollarSign // <--- Added these imports for the Marketplace
+  Plus, DollarSign 
 } from 'lucide-react';
+
+// --- USER PROFILE MODAL ---
+const UserProfile = ({ username, onClose }: any) => {
+  const [userPosts, setUserPosts] = useState<any[]>([]);
+  const [stats, setStats] = useState({ postCount: 0, totalLikes: 0 });
+
+  useEffect(() => {
+    const fetchUserData = async () => {
+      // 1. Get all posts by this user
+      const { data: posts } = await supabase
+        .from('posts')
+        .select('*')
+        .eq('user_display_name', username)
+        .order('created_at', { ascending: false });
+
+      if (posts) {
+        setUserPosts(posts);
+        // Calculate stats
+        const totalLikes = posts.reduce((acc, post) => acc + (post.likes_count || 0), 0);
+        setStats({ postCount: posts.length, totalLikes });
+      }
+    };
+    fetchUserData();
+  }, [username]);
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in">
+      <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95">
+        
+        {/* Header / Cover */}
+        <div className="h-32 bg-gradient-to-r from-blue-500 to-indigo-600 relative">
+          <button onClick={onClose} className="absolute top-4 right-4 bg-black/20 hover:bg-black/40 text-white p-2 rounded-full backdrop-blur-md transition-colors">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Profile Info */}
+        <div className="px-8 pb-8">
+          <div className="relative -mt-12 mb-4">
+             <div className="w-24 h-24 bg-white p-1 rounded-full shadow-md inline-block">
+               <img 
+                 src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${username}`} 
+                 alt="avatar" 
+                 className="w-full h-full rounded-full bg-gray-100"
+               />
+             </div>
+          </div>
+          
+          <div className="flex justify-between items-start mb-6">
+            <div>
+              <h2 className="text-2xl font-bold text-gray-900">@{username}</h2>
+              <p className="text-gray-500 text-sm">Community Member</p>
+            </div>
+            <div className="flex gap-4 text-center">
+              <div className="bg-blue-50 px-4 py-2 rounded-lg">
+                <span className="block font-bold text-blue-700 text-xl">{stats.postCount}</span>
+                <span className="text-xs text-blue-600 uppercase font-bold tracking-wider">Posts</span>
+              </div>
+              <div className="bg-orange-50 px-4 py-2 rounded-lg">
+                <span className="block font-bold text-orange-700 text-xl">{stats.totalLikes}</span>
+                <span className="text-xs text-orange-600 uppercase font-bold tracking-wider">Karma</span>
+              </div>
+            </div>
+          </div>
+
+          {/* User's Posts List */}
+          <h3 className="font-bold text-gray-900 border-b border-gray-100 pb-2 mb-3 flex items-center gap-2">
+            <HomeIcon className="w-4 h-4" /> Recent Activity
+          </h3>
+          <div className="h-64 overflow-y-auto custom-scrollbar pr-2 space-y-3">
+             {userPosts.length === 0 ? (
+               <p className="text-gray-400 italic">No posts yet.</p>
+             ) : (
+               userPosts.map(post => (
+                 <div key={post.id} className="p-3 border border-gray-100 rounded-lg hover:bg-gray-50">
+                    <p className="text-sm text-gray-800 line-clamp-2">{post.content}</p>
+                    <div className="flex justify-between items-center mt-2">
+                      <span className="text-xs text-gray-400">{new Date(post.created_at).toLocaleDateString()}</span>
+                      <span className="text-xs font-bold text-blue-600 flex items-center gap-1">
+                        <ThumbsUp className="w-3 h-3" /> {post.likes_count}
+                      </span>
+                    </div>
+                 </div>
+               ))
+             )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 // --- CHAT LOUNGE COMPONENT ---
 const ChatLounge = ({ communitySlug, user }: any) => {
@@ -97,7 +188,6 @@ const MarketplaceView = ({ user }: any) => {
   const [items, setItems] = useState<any[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   
-  // New Item Form State
   const [newItemTitle, setNewItemTitle] = useState('');
   const [newItemPrice, setNewItemPrice] = useState('');
   const [newItemImage, setNewItemImage] = useState<File | null>(null);
@@ -118,7 +208,6 @@ const MarketplaceView = ({ user }: any) => {
 
     setIsUploading(true);
 
-    // 1. Upload Image
     const fileName = `${Date.now()}-${newItemImage.name}`;
     const { data: uploadData, error: uploadError } = await supabase.storage
       .from('marketplace')
@@ -130,12 +219,10 @@ const MarketplaceView = ({ user }: any) => {
       return;
     }
 
-    // 2. Get Public URL
     const { data: { publicUrl } } = supabase.storage
       .from('marketplace')
       .getPublicUrl(fileName);
 
-    // 3. Save to Database
     const { error: dbError } = await supabase.from('market_items').insert({
       title: newItemTitle,
       price: parseFloat(newItemPrice),
@@ -149,7 +236,7 @@ const MarketplaceView = ({ user }: any) => {
       setNewItemTitle('');
       setNewItemPrice('');
       setNewItemImage(null);
-      fetchItems(); // Refresh grid
+      fetchItems(); 
     }
     setIsUploading(false);
   };
@@ -166,7 +253,6 @@ const MarketplaceView = ({ user }: any) => {
         </button>
       </div>
 
-      {/* SELL FORM */}
       {isFormOpen && (
         <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 mb-8 animate-in slide-in-from-top-4">
           <h3 className="font-bold mb-4">List new item</h3>
@@ -204,7 +290,6 @@ const MarketplaceView = ({ user }: any) => {
         </div>
       )}
 
-      {/* ITEMS GRID */}
       <div className="grid grid-cols-2 gap-4">
         {items.map((item) => (
           <div key={item.id} className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden hover:shadow-md transition-shadow">
@@ -228,18 +313,15 @@ const MarketplaceView = ({ user }: any) => {
   );
 };
 
-// --- THREAD CARD COMPONENT (WITH LIKES & COMMENTS) ---
-const ThreadCard = ({ post, currentUser }: any) => {
+// --- THREAD CARD COMPONENT ---
+const ThreadCard = ({ post, currentUser, onUserClick }: any) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const [comments, setComments] = useState<any[]>([]);
   const [newComment, setNewComment] = useState('');
   const [loadingComments, setLoadingComments] = useState(false);
-
-  // Like State
   const [liked, setLiked] = useState(false);
   const [likeCount, setLikeCount] = useState(post.likes_count || 0);
 
-  // Check Like Status
   useEffect(() => {
     if (!currentUser) return;
     const checkLikeStatus = async () => {
@@ -313,7 +395,10 @@ const ThreadCard = ({ post, currentUser }: any) => {
           </div>
           <div>
             <div className="flex items-center">
-               <span className="font-semibold text-gray-900 text-sm hover:underline cursor-pointer">
+               <span 
+                 onClick={() => onUserClick(post.user_display_name)}
+                 className="font-semibold text-gray-900 text-sm hover:underline cursor-pointer"
+               >
                  {post.user_display_name}
                </span>
             </div>
@@ -394,7 +479,6 @@ const ThreadCard = ({ post, currentUser }: any) => {
   );
 };
 
-// Updated Sidebar Item to accept onClick
 const SidebarItem = ({ icon: Icon, label, active, onClick }: any) => (
   <div 
     onClick={onClick}
@@ -418,21 +502,19 @@ const TabButton = ({ active, onClick, label }: any) => (
 // --- MAIN APP COMPONENT ---
 
 export default function Home() {
-  const [viewMode, setViewMode] = useState('threads'); // 'threads' | 'lounge' | 'market'
+  const [viewMode, setViewMode] = useState('threads'); 
+  const [viewProfile, setViewProfile] = useState<string | null>(null);
   
-  // Auth State
   const [user, setUser] = useState<any>(null);
   const [isLoginOpen, setIsLoginOpen] = useState(false);
   const [loginEmail, setLoginEmail] = useState('');
   const [authLoading, setAuthLoading] = useState(false);
 
-  // Data State
   const [posts, setPosts] = useState<any[]>([]);
   const [newPostContent, setNewPostContent] = useState('');
   const [isPosting, setIsPosting] = useState(false);
   const [isPostBoxOpen, setIsPostBoxOpen] = useState(false);
 
-  // Load User & Posts
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => setUser(user));
 
@@ -518,7 +600,6 @@ export default function Home() {
             </div>
          </div>
          
-         {/* AUTH BUTTONS IN HEADER */}
          <div className="flex items-center gap-4 w-64 justify-end">
             {user ? (
                 <div className="flex items-center gap-3">
@@ -576,7 +657,6 @@ export default function Home() {
       {/* MAIN CONTENT */}
       <div className="flex pt-14 w-full max-w-[1600px] mx-auto h-full">
          <div className="w-[280px] hidden lg:flex flex-col p-4 overflow-y-auto h-full fixed left-0 top-14 bottom-0">
-            {/* 1. Home Button switches to 'threads' */}
             <SidebarItem 
               icon={HomeIcon} 
               label="Home Feed" 
@@ -586,7 +666,6 @@ export default function Home() {
             
             <SidebarItem icon={Users} label="Friends" />
 
-            {/* 2. Marketplace Button switches to 'market' */}
             <SidebarItem 
               icon={TrendingUp} 
               label="Marketplace" 
@@ -602,7 +681,6 @@ export default function Home() {
          <div className="flex-1 flex justify-center overflow-y-auto lg:ml-[280px] lg:mr-[320px] w-full p-4 custom-scrollbar">
             <div className="w-full max-w-[680px] pb-20">
                
-               {/* BANNER (Only shows when NOT in marketplace) */}
                {viewMode !== 'market' && (
                  <div className="bg-white rounded-xl shadow-sm border border-gray-200 mb-6 overflow-hidden">
                     <div className="h-32 bg-gradient-to-r from-blue-600 to-indigo-700"></div>
@@ -625,18 +703,12 @@ export default function Home() {
                  </div>
                )}
 
-               {/* CONTENT AREA */}
-               
-               {/* 1. Show Marketplace */}
                {viewMode === 'market' && (
                  <MarketplaceView user={user} />
                )}
 
-               {/* 2. Show Threads (Feed) */}
                {viewMode === 'threads' && (
                   <div className="animate-in fade-in duration-300">
-                      
-                      {/* CREATE POST BOX */}
                       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 mb-4">
                          <div className="flex gap-3">
                             {user ? (
@@ -680,27 +752,29 @@ export default function Home() {
                          </div>
                       </div>
                       
-                      {/* THREAD LIST */}
                       {posts.length === 0 ? (
                          <div className="text-center py-10 text-gray-500 bg-white rounded-lg border border-gray-200 border-dashed">
                              <p>No posts yet. Be the first to start the conversation!</p>
                          </div>
                       ) : (
                          posts.map(post => (
-                             <ThreadCard key={post.id} post={post} currentUser={user} />
+                             <ThreadCard 
+                               key={post.id} 
+                               post={post} 
+                               currentUser={user} 
+                               onUserClick={(name: string) => setViewProfile(name)}
+                             />
                          ))
                       )}
                   </div>
                )}
 
-               {/* 3. Show Chat */}
                {viewMode === 'lounge' && (
                   <ChatLounge communitySlug="future-tech" user={user} />
                )}
             </div>
          </div>
 
-         {/* RIGHT SIDEBAR */}
          <div className="hidden lg:block w-[320px] p-4 fixed right-0 top-14 bottom-0 overflow-y-auto h-full border-l border-gray-200 bg-white z-10">
             <h3 className="text-gray-500 font-semibold text-[13px] mb-3">Sponsored</h3>
             <div className="flex gap-3 mb-3 cursor-pointer group">
@@ -711,8 +785,12 @@ export default function Home() {
                </div>
             </div>
          </div>
-
       </div>
+      
+      {/* USER PROFILE MODAL */}
+      {viewProfile && (
+        <UserProfile username={viewProfile} onClose={() => setViewProfile(null)} />
+      )}
     </div>
   );
 }
