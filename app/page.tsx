@@ -25,7 +25,8 @@ const UserProfile = ({ username, onClose }: any) => {
       if (posts) {
         setUserPosts(posts);
         // Calculate stats
-        const totalLikes = posts.reduce((acc, post) => acc + (post.likes_count || 0), 0);
+       // 🛡️ Ensure we never add negative numbers to Karma
+const totalLikes = posts.reduce((acc, post) => acc + Math.max(0, post.likes_count || 0), 0);
         setStats({ postCount: posts.length, totalLikes });
       }
     };
