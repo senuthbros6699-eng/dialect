@@ -4,7 +4,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from "../lib/supabase.js/supabase"; 
 import { 
   MessageSquare, Hash, Users, Search, 
-  Share2, Send, Home as HomeIcon, TrendingUp, ThumbsUp, LogIn, LogOut, X, Loader2
+  Share2, Send, Home as HomeIcon, TrendingUp, ThumbsUp, LogIn, LogOut, X, Loader2,
+  Plus, DollarSign // <--- Added these imports for the Marketplace
 } from 'lucide-react';
 
 // --- CHAT LOUNGE COMPONENT ---
@@ -91,6 +92,142 @@ const ChatLounge = ({ communitySlug, user }: any) => {
   );
 };
 
+// --- MARKETPLACE COMPONENT ---
+const MarketplaceView = ({ user }: any) => {
+  const [items, setItems] = useState<any[]>([]);
+  const [isUploading, setIsUploading] = useState(false);
+  
+  // New Item Form State
+  const [newItemTitle, setNewItemTitle] = useState('');
+  const [newItemPrice, setNewItemPrice] = useState('');
+  const [newItemImage, setNewItemImage] = useState<File | null>(null);
+  const [isFormOpen, setIsFormOpen] = useState(false);
+
+  useEffect(() => {
+    fetchItems();
+  }, []);
+
+  const fetchItems = async () => {
+    const { data } = await supabase.from('market_items').select('*').order('created_at', { ascending: false });
+    if (data) setItems(data);
+  };
+
+  const handleSellItem = async () => {
+    if (!user) return alert("Please sign in to sell items!");
+    if (!newItemTitle || !newItemPrice || !newItemImage) return alert("Please fill in all fields");
+
+    setIsUploading(true);
+
+    // 1. Upload Image
+    const fileName = `${Date.now()}-${newItemImage.name}`;
+    const { data: uploadData, error: uploadError } = await supabase.storage
+      .from('marketplace')
+      .upload(fileName, newItemImage);
+
+    if (uploadError) {
+      alert("Error uploading image: " + uploadError.message);
+      setIsUploading(false);
+      return;
+    }
+
+    // 2. Get Public URL
+    const { data: { publicUrl } } = supabase.storage
+      .from('marketplace')
+      .getPublicUrl(fileName);
+
+    // 3. Save to Database
+    const { error: dbError } = await supabase.from('market_items').insert({
+      title: newItemTitle,
+      price: parseFloat(newItemPrice),
+      image_url: publicUrl,
+      seller_email: user.email
+    });
+
+    if (dbError) alert(dbError.message);
+    else {
+      setIsFormOpen(false);
+      setNewItemTitle('');
+      setNewItemPrice('');
+      setNewItemImage(null);
+      fetchItems(); // Refresh grid
+    }
+    setIsUploading(false);
+  };
+
+  return (
+    <div className="p-4">
+      <div className="flex justify-between items-center mb-6">
+        <h2 className="text-2xl font-bold text-gray-900">Marketplace</h2>
+        <button 
+          onClick={() => user ? setIsFormOpen(!isFormOpen) : alert("Sign in to sell!")}
+          className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2"
+        >
+          <Plus className="w-5 h-5" /> Sell Item
+        </button>
+      </div>
+
+      {/* SELL FORM */}
+      {isFormOpen && (
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 mb-8 animate-in slide-in-from-top-4">
+          <h3 className="font-bold mb-4">List new item</h3>
+          <div className="space-y-4">
+            <input 
+              placeholder="Item Title (e.g. iPhone 15)" 
+              className="w-full p-3 border border-gray-200 rounded-lg outline-none focus:border-green-500"
+              value={newItemTitle} onChange={e => setNewItemTitle(e.target.value)}
+            />
+            <div className="flex gap-4">
+              <div className="relative flex-1">
+                <DollarSign className="absolute left-3 top-3.5 text-gray-400 w-4 h-4" />
+                <input 
+                  type="number" 
+                  placeholder="Price" 
+                  className="w-full p-3 pl-9 border border-gray-200 rounded-lg outline-none focus:border-green-500"
+                  value={newItemPrice} onChange={e => setNewItemPrice(e.target.value)}
+                />
+              </div>
+              <input 
+                type="file" 
+                accept="image/*"
+                className="flex-1 p-2 border border-gray-200 rounded-lg"
+                onChange={e => e.target.files && setNewItemImage(e.target.files[0])}
+              />
+            </div>
+            <button 
+              onClick={handleSellItem}
+              disabled={isUploading}
+              className="w-full bg-gray-900 text-white font-bold py-3 rounded-lg hover:bg-black disabled:opacity-50"
+            >
+              {isUploading ? 'Uploading...' : 'List Item'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ITEMS GRID */}
+      <div className="grid grid-cols-2 gap-4">
+        {items.map((item) => (
+          <div key={item.id} className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden hover:shadow-md transition-shadow">
+            <div className="h-48 bg-gray-100 relative">
+              <img src={item.image_url} alt={item.title} className="w-full h-full object-cover" />
+              <div className="absolute bottom-2 right-2 bg-white/90 px-2 py-1 rounded text-xs font-bold shadow-sm">
+                Sold by {item.seller_email.split('@')[0]}
+              </div>
+            </div>
+            <div className="p-4">
+              <h3 className="font-bold text-gray-900 text-lg mb-1">{item.title}</h3>
+              <p className="text-green-700 font-bold text-xl">${item.price}</p>
+              <button className="w-full mt-3 border border-gray-200 text-gray-700 font-semibold py-2 rounded-lg hover:bg-gray-50 text-sm">
+                Message Seller
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
 // --- THREAD CARD COMPONENT (WITH LIKES & COMMENTS) ---
 const ThreadCard = ({ post, currentUser }: any) => {
   const [isExpanded, setIsExpanded] = useState(false);
@@ -117,14 +254,11 @@ const ThreadCard = ({ post, currentUser }: any) => {
     checkLikeStatus();
   }, [currentUser, post.id]);
 
- const toggleLike = async () => {
+  const toggleLike = async () => {
     if (!currentUser) return alert("Please sign in to like posts!");
     
     const newLikedState = !liked;
-    
-    // 🛡️ SAFETY FIX: Use Math.max to prevent negative numbers
     const newCount = newLikedState ? likeCount + 1 : Math.max(0, likeCount - 1);
-    
     setLiked(newLikedState);
     setLikeCount(newCount);
 
@@ -202,8 +336,7 @@ const ThreadCard = ({ post, currentUser }: any) => {
             liked ? 'text-blue-600 bg-blue-50' : 'text-gray-500 hover:bg-gray-50'
           }`}
         >
-          <ThumbsUp className={`w-5 h-5 ${liked ? 'fill-current' : ''}`} /> {/* Force the display to be at least 0 */}
-{Math.max(0, likeCount)}
+          <ThumbsUp className={`w-5 h-5 ${liked ? 'fill-current' : ''}`} /> {Math.max(0, likeCount)}
         </button>
         <button 
           onClick={toggleComments}
@@ -261,8 +394,12 @@ const ThreadCard = ({ post, currentUser }: any) => {
   );
 };
 
-const SidebarItem = ({ icon: Icon, label, active }: any) => (
-  <div className={`flex items-center justify-between px-3 py-2 rounded-lg cursor-pointer transition-all mb-1 ${active ? 'bg-blue-50 text-blue-600' : 'text-gray-600 hover:bg-gray-100'}`}>
+// Updated Sidebar Item to accept onClick
+const SidebarItem = ({ icon: Icon, label, active, onClick }: any) => (
+  <div 
+    onClick={onClick}
+    className={`flex items-center justify-between px-3 py-2 rounded-lg cursor-pointer transition-all mb-1 ${active ? 'bg-blue-50 text-blue-600' : 'text-gray-600 hover:bg-gray-100'}`}
+  >
     <div className="flex items-center gap-3">
       <div className={`p-1.5 rounded-full ${active ? 'bg-blue-100' : 'bg-gray-100'}`}>
          <Icon className={`w-5 h-5 ${active ? 'text-blue-600' : 'text-gray-600'}`} />
@@ -281,7 +418,7 @@ const TabButton = ({ active, onClick, label }: any) => (
 // --- MAIN APP COMPONENT ---
 
 export default function Home() {
-  const [viewMode, setViewMode] = useState('threads');
+  const [viewMode, setViewMode] = useState('threads'); // 'threads' | 'lounge' | 'market'
   
   // Auth State
   const [user, setUser] = useState<any>(null);
@@ -439,39 +576,63 @@ export default function Home() {
       {/* MAIN CONTENT */}
       <div className="flex pt-14 w-full max-w-[1600px] mx-auto h-full">
          <div className="w-[280px] hidden lg:flex flex-col p-4 overflow-y-auto h-full fixed left-0 top-14 bottom-0">
-            <SidebarItem icon={HomeIcon} label="Home Feed" active={true} />
+            {/* 1. Home Button switches to 'threads' */}
+            <SidebarItem 
+              icon={HomeIcon} 
+              label="Home Feed" 
+              active={viewMode === 'threads' || viewMode === 'lounge'} 
+              onClick={() => setViewMode('threads')} 
+            />
+            
             <SidebarItem icon={Users} label="Friends" />
-            <SidebarItem icon={TrendingUp} label="Marketplace" />
+
+            {/* 2. Marketplace Button switches to 'market' */}
+            <SidebarItem 
+              icon={TrendingUp} 
+              label="Marketplace" 
+              active={viewMode === 'market'} 
+              onClick={() => setViewMode('market')} 
+            />
+
             <div className="border-t border-gray-200 my-2"></div>
             <span className="text-gray-500 font-semibold text-[13px] px-3 mt-2 mb-1">Your Communities</span>
-            <SidebarItem icon={Hash} label="Future Tech" />
+            <SidebarItem icon={Hash} label="Future Tech" active={viewMode === 'threads' || viewMode === 'lounge'} onClick={() => setViewMode('threads')} />
          </div>
 
          <div className="flex-1 flex justify-center overflow-y-auto lg:ml-[280px] lg:mr-[320px] w-full p-4 custom-scrollbar">
             <div className="w-full max-w-[680px] pb-20">
                
-               {/* COMMUNITY COVER */}
-               <div className="bg-white rounded-xl shadow-sm border border-gray-200 mb-6 overflow-hidden">
-                  <div className="h-32 bg-gradient-to-r from-blue-600 to-indigo-700"></div>
-                  <div className="px-6 pb-4">
-                      <div className="flex justify-between items-end -mt-6 mb-4">
-                         <div className="bg-white p-1 rounded-xl shadow-sm">
-                            <div className="w-24 h-24 bg-gray-100 rounded-lg border border-gray-200 flex items-center justify-center">
-                               <Hash className="w-10 h-10 text-gray-400" />
-                            </div>
-                         </div>
-                         <button className="px-4 py-2 bg-gray-200 text-gray-700 font-semibold rounded-md text-sm">Joined</button>
-                      </div>
-                      <h1 className="text-2xl font-bold text-gray-900">Future Tech</h1>
-                      <p className="text-gray-600 mt-3 text-sm border-t border-gray-100 pt-3">Discussing the bleeding edge of technology.</p>
-                  </div>
-                  <div className="px-4 flex border-t border-gray-200">
-                      <TabButton active={viewMode === 'threads'} onClick={() => setViewMode('threads')} label="Posts" />
-                      <TabButton active={viewMode === 'lounge'} onClick={() => setViewMode('lounge')} label="Chat Lounge" />
-                  </div>
-               </div>
+               {/* BANNER (Only shows when NOT in marketplace) */}
+               {viewMode !== 'market' && (
+                 <div className="bg-white rounded-xl shadow-sm border border-gray-200 mb-6 overflow-hidden">
+                    <div className="h-32 bg-gradient-to-r from-blue-600 to-indigo-700"></div>
+                    <div className="px-6 pb-4">
+                        <div className="flex justify-between items-end -mt-6 mb-4">
+                           <div className="bg-white p-1 rounded-xl shadow-sm">
+                              <div className="w-24 h-24 bg-gray-100 rounded-lg border border-gray-200 flex items-center justify-center">
+                                 <Hash className="w-10 h-10 text-gray-400" />
+                              </div>
+                           </div>
+                           <button className="px-4 py-2 bg-gray-200 text-gray-700 font-semibold rounded-md text-sm">Joined</button>
+                        </div>
+                        <h1 className="text-2xl font-bold text-gray-900">Future Tech</h1>
+                        <p className="text-gray-600 mt-3 text-sm border-t border-gray-100 pt-3">Discussing the bleeding edge of technology.</p>
+                    </div>
+                    <div className="px-4 flex border-t border-gray-200">
+                        <TabButton active={viewMode === 'threads'} onClick={() => setViewMode('threads')} label="Posts" />
+                        <TabButton active={viewMode === 'lounge'} onClick={() => setViewMode('lounge')} label="Chat Lounge" />
+                    </div>
+                 </div>
+               )}
 
                {/* CONTENT AREA */}
+               
+               {/* 1. Show Marketplace */}
+               {viewMode === 'market' && (
+                 <MarketplaceView user={user} />
+               )}
+
+               {/* 2. Show Threads (Feed) */}
                {viewMode === 'threads' && (
                   <div className="animate-in fade-in duration-300">
                       
@@ -532,6 +693,7 @@ export default function Home() {
                   </div>
                )}
 
+               {/* 3. Show Chat */}
                {viewMode === 'lounge' && (
                   <ChatLounge communitySlug="future-tech" user={user} />
                )}
