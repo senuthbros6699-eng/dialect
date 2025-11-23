@@ -8,14 +8,21 @@ import {
   Plus, DollarSign 
 } from 'lucide-react';
 
-// --- USER PROFILE MODAL ---
-const UserProfile = ({ username, onClose }: any) => {
+// --- UPDATED USER PROFILE (WITH EDITING) ---
+const UserProfile = ({ username, currentUser, onClose }: any) => {
   const [userPosts, setUserPosts] = useState<any[]>([]);
   const [stats, setStats] = useState({ postCount: 0, totalLikes: 0 });
+  
+  // Profile Data
+  const [profileData, setProfileData] = useState<any>({ avatar_url: null, banner_url: null });
+  const [isUploading, setIsUploading] = useState(false);
+
+  // Check if this is MY profile
+  const isMyProfile = currentUser?.email?.split('@')[0] === username;
 
   useEffect(() => {
-    const fetchUserData = async () => {
-      // 1. Get all posts by this user
+    const fetchData = async () => {
+      // 1. Get Posts & Stats
       const { data: posts } = await supabase
         .from('posts')
         .select('*')
@@ -24,42 +31,111 @@ const UserProfile = ({ username, onClose }: any) => {
 
       if (posts) {
         setUserPosts(posts);
-        // Calculate stats
-       // 🛡️ Ensure we never add negative numbers to Karma
-const totalLikes = posts.reduce((acc, post) => acc + Math.max(0, post.likes_count || 0), 0);
+        // Calculate stats (Safe calculation preventing negatives)
+        const totalLikes = posts.reduce((acc, post) => acc + Math.max(0, post.likes_count || 0), 0);
         setStats({ postCount: posts.length, totalLikes });
       }
+
+      // 2. Get Custom Profile Images from DB
+      const { data: profile } = await supabase
+        .from('user_profiles')
+        .select('*')
+        .eq('username', username)
+        .single();
+      
+      if (profile) setProfileData(profile);
     };
-    fetchUserData();
+    fetchData();
   }, [username]);
+
+  const handleImageUpload = async (event: any, type: 'avatar' | 'banner') => {
+    if (!event.target.files || event.target.files.length === 0) return;
+    setIsUploading(true);
+
+    const file = event.target.files[0];
+    const fileName = `${username}-${type}-${Date.now()}`;
+    
+    // 1. Upload to Supabase Storage
+    const { error: uploadError } = await supabase.storage
+      .from('profiles')
+      .upload(fileName, file);
+
+    if (uploadError) {
+      alert("Error uploading: " + uploadError.message);
+      setIsUploading(false);
+      return;
+    }
+
+    // 2. Get Public URL
+    const { data: { publicUrl } } = supabase.storage
+      .from('profiles')
+      .getPublicUrl(fileName);
+
+    // 3. Save URL to Database (Upsert handles create or update)
+    const updates = type === 'avatar' ? { avatar_url: publicUrl } : { banner_url: publicUrl };
+    
+    await supabase.from('user_profiles').upsert({ 
+      username: username, 
+      ...profileData, // keep existing data
+      ...updates      // overwrite new data
+    });
+
+    // 4. Update Local State
+    setProfileData({ ...profileData, ...updates });
+    setIsUploading(false);
+  };
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in">
-      <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95">
+      <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 relative">
         
-        {/* Header / Cover */}
-        <div className="h-32 bg-gradient-to-r from-blue-500 to-indigo-600 relative">
-          <button onClick={onClose} className="absolute top-4 right-4 bg-black/20 hover:bg-black/40 text-white p-2 rounded-full backdrop-blur-md transition-colors">
-            <X className="w-5 h-5" />
-          </button>
+        {/* BANNER */}
+        <div className="h-32 bg-gray-200 relative group">
+            {profileData.banner_url ? (
+                <img src={profileData.banner_url} className="w-full h-full object-cover" alt="banner" />
+            ) : (
+                <div className="w-full h-full bg-gradient-to-r from-blue-500 to-indigo-600"></div>
+            )}
+            
+            {/* Edit Banner Button */}
+            {isMyProfile && (
+                <label className="absolute top-4 left-4 bg-black/50 hover:bg-black/70 text-white p-2 rounded-lg cursor-pointer text-xs font-bold opacity-0 group-hover:opacity-100 transition-opacity">
+                    Change Banner
+                    <input type="file" accept="image/*" className="hidden" onChange={(e) => handleImageUpload(e, 'banner')} />
+                </label>
+            )}
+
+            <button onClick={onClose} className="absolute top-4 right-4 bg-black/20 hover:bg-black/40 text-white p-2 rounded-full backdrop-blur-md transition-colors">
+                <X className="w-5 h-5" />
+            </button>
         </div>
 
-        {/* Profile Info */}
+        {/* PROFILE INFO */}
         <div className="px-8 pb-8">
           <div className="relative -mt-12 mb-4">
-             <div className="w-24 h-24 bg-white p-1 rounded-full shadow-md inline-block">
+             {/* AVATAR */}
+             <div className="w-24 h-24 bg-white p-1 rounded-full shadow-md inline-block relative group">
                <img 
-                 src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${username}`} 
+                 src={profileData.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${username}`} 
                  alt="avatar" 
-                 className="w-full h-full rounded-full bg-gray-100"
+                 className="w-full h-full rounded-full bg-gray-100 object-cover"
                />
+               
+               {/* Edit Avatar Overlay */}
+               {isMyProfile && (
+                   <label className="absolute inset-0 flex items-center justify-center bg-black/50 rounded-full text-white text-xs font-bold cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity">
+                       Edit
+                       <input type="file" accept="image/*" className="hidden" onChange={(e) => handleImageUpload(e, 'avatar')} />
+                   </label>
+               )}
              </div>
+             {isUploading && <span className="ml-3 text-sm text-blue-600 font-bold animate-pulse">Uploading...</span>}
           </div>
           
           <div className="flex justify-between items-start mb-6">
             <div>
               <h2 className="text-2xl font-bold text-gray-900">@{username}</h2>
-              <p className="text-gray-500 text-sm">Community Member</p>
+              <p className="text-gray-500 text-sm">Community Member {isMyProfile && "(You)"}</p>
             </div>
             <div className="flex gap-4 text-center">
               <div className="bg-blue-50 px-4 py-2 rounded-lg">
@@ -87,7 +163,7 @@ const totalLikes = posts.reduce((acc, post) => acc + Math.max(0, post.likes_coun
                     <div className="flex justify-between items-center mt-2">
                       <span className="text-xs text-gray-400">{new Date(post.created_at).toLocaleDateString()}</span>
                       <span className="text-xs font-bold text-blue-600 flex items-center gap-1">
-                        <ThumbsUp className="w-3 h-3" /> {post.likes_count}
+                        <ThumbsUp className="w-3 h-3" /> {Math.max(0, post.likes_count || 0)}
                       </span>
                     </div>
                  </div>
@@ -790,7 +866,11 @@ export default function Home() {
       
       {/* USER PROFILE MODAL */}
       {viewProfile && (
-        <UserProfile username={viewProfile} onClose={() => setViewProfile(null)} />
+        <UserProfile 
+            username={viewProfile} 
+            currentUser={user} 
+            onClose={() => setViewProfile(null)} 
+        />
       )}
     </div>
   );
