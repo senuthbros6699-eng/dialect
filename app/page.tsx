@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
+// NOTE: Using the specific import path from user's environment
 import { supabase } from "../lib/supabase.js/supabase"; 
 import { 
   MessageSquare, Hash, Users, Search, 
@@ -8,7 +9,7 @@ import {
   Plus, DollarSign 
 } from 'lucide-react';
 
-// --- UPDATED USER PROFILE (WITH EDITING) ---
+// --- USER PROFILE MODAL ---
 const UserProfile = ({ username, currentUser, onClose }: any) => {
   const [userPosts, setUserPosts] = useState<any[]>([]);
   const [stats, setStats] = useState({ postCount: 0, totalLikes: 0 });
@@ -391,7 +392,11 @@ const MarketplaceView = ({ user }: any) => {
 };
 
 // --- THREAD CARD COMPONENT ---
-const ThreadCard = ({ post, currentUser, onUserClick }: any) => {
+const ThreadCard = ({ post, currentUser, onUserClick, profileMap }: any) => {
+  // Determine the correct avatar URL: custom URL first, then DiceBear fallback
+  const customAvatarUrl = profileMap[post.user_display_name]?.avatar_url;
+  const avatarSrc = customAvatarUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${post.user_display_name}`;
+  
   const [isExpanded, setIsExpanded] = useState(false);
   const [comments, setComments] = useState<any[]>([]);
   const [newComment, setNewComment] = useState('');
@@ -468,7 +473,7 @@ const ThreadCard = ({ post, currentUser, onUserClick }: any) => {
       <div className="p-4 pb-2 flex justify-between items-start">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-full bg-gray-200 overflow-hidden border border-gray-100">
-             <img src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${post.user_display_name}`} alt="avatar" />
+             <img src={avatarSrc} alt="avatar" className="w-full h-full object-cover" />
           </div>
           <div>
             <div className="flex items-center">
@@ -517,7 +522,7 @@ const ThreadCard = ({ post, currentUser, onUserClick }: any) => {
               {loadingComments ? (
                  <p className="text-gray-400 text-sm italic">Loading comments...</p>
               ) : comments.length === 0 ? (
-                 <p className="text-gray-400 text-sm italic">No comments yet. Be the first!</p>
+                 <p className="text-gray-400 text-sm italic">No comments yet.</p>
               ) : (
                  comments.map((c: any) => (
                     <div key={c.id} className="flex gap-2">
@@ -591,6 +596,9 @@ export default function Home() {
   const [newPostContent, setNewPostContent] = useState('');
   const [isPosting, setIsPosting] = useState(false);
   const [isPostBoxOpen, setIsPostBoxOpen] = useState(false);
+  
+  // New State for Profiles Map
+  const [profilesMap, setProfilesMap] = useState<Record<string, any>>({});
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => setUser(user));
@@ -604,12 +612,31 @@ export default function Home() {
     return () => subscription.unsubscribe();
   }, []);
 
+  // UPDATED FETCH FUNCTION to get profiles
   const fetchPosts = async () => {
-    const { data, error } = await supabase
+    // 1. Fetch Posts
+    const { data: postsData } = await supabase
       .from('posts')
       .select('*')
       .order('created_at', { ascending: false });
-    if (data) setPosts(data);
+
+    if (postsData) {
+        setPosts(postsData);
+        
+        // 2. Get unique usernames and fetch their profiles
+        const usernames = [...new Set(postsData.map(p => p.user_display_name))];
+        
+        const { data: profilesData } = await supabase
+            .from('user_profiles')
+            .select('username, avatar_url')
+            .in('username', usernames);
+        
+        if (profilesData) {
+            // Convert array to a map { "username": { profile_data } } for easy lookup
+            const newMap = profilesData.reduce((acc, p) => ({ ...acc, [p.username]: p }), {});
+            setProfilesMap(newMap);
+        }
+    }
   };
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -840,6 +867,7 @@ export default function Home() {
                                post={post} 
                                currentUser={user} 
                                onUserClick={(name: string) => setViewProfile(name)}
+                               profileMap={profilesMap}
                              />
                          ))
                       )}
