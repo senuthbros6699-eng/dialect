@@ -7,36 +7,6 @@ import {
   Share2, Send, Home as HomeIcon, TrendingUp, ThumbsUp, LogIn, LogOut, X, Loader2,
   Plus, DollarSign 
 } from 'lucide-react';
-// --- DYNAMIC SIDEBAR LIST COMPONENT ---
-const CommunityList = ({ currentSlug }: { currentSlug: string }) => {
-  const [communities, setCommunities] = useState<any[]>([]);
-
-  useEffect(() => {
-    const fetchCommunities = async () => {
-      // Fetches all communities from the DB
-      const { data } = await supabase.from('communities').select('*').order('name', { ascending: true });
-      if (data) setCommunities(data);
-    };
-    fetchCommunities();
-  }, []);
-
-  // Maps the fetched data to SidebarItem components
-  return (
-    <>
-      <span className="text-gray-500 font-semibold text-[13px] px-3 mt-2 mb-1">Your Communities</span>
-      {communities.map(community => (
-        <SidebarItem
-          key={community.slug}
-          icon={Hash}
-          label={community.name}
-          active={currentSlug === community.slug}
-          // Note: Clicking redirects to the new dynamic path /c/[slug]
-          onClick={() => window.location.href = `/c/${community.slug}`}
-        />
-      ))}
-    </>
-  );
-};
 
 // --- USER PROFILE MODAL ---
 const UserProfile = ({ username, currentUser, onClose }: any) => {
@@ -61,6 +31,7 @@ const UserProfile = ({ username, currentUser, onClose }: any) => {
 
       if (posts) {
         setUserPosts(posts);
+        // Calculate stats (Safe calculation preventing negatives)
         const totalLikes = posts.reduce((acc, post) => acc + Math.max(0, post.likes_count || 0), 0);
         setStats({ postCount: posts.length, totalLikes });
       }
@@ -277,7 +248,7 @@ const ChatLounge = ({ communitySlug, user }: any) => {
         <input
           value={newMessage}
           onChange={(e) => setNewMessage(e.target.value)}
-          placeholder={user ? "Message #currentCommunitySlug..." : "Sign in to chat..."}
+          placeholder={user ? "Message #future-tech..." : "Sign in to chat..."}
           disabled={!user}
           className="flex-1 bg-gray-100 border-0 rounded-full px-4 text-sm focus:ring-2 focus:ring-blue-500 outline-none disabled:opacity-50"
         />
@@ -611,15 +582,38 @@ const TabButton = ({ active, onClick, label }: any) => (
   </button>
 );
 
-// --- MAIN APP COMPONENT ---
+// --- DYNAMIC SIDEBAR LIST COMPONENT ---
+const CommunityList = ({ currentSlug }: { currentSlug: string }) => {
+  const [communities, setCommunities] = useState<any[]>([]);
 
-// The component name is now CommunityPage, and it accepts URL parameters (slug)
+  useEffect(() => {
+    const fetchCommunities = async () => {
+      const { data } = await supabase.from('communities').select('*').order('name', { ascending: true });
+      if (data) setCommunities(data);
+    };
+    fetchCommunities();
+  }, []);
+
+  return (
+    <>
+      <span className="text-gray-500 font-semibold text-[13px] px-3 mt-2 mb-1">Your Communities</span>
+      {communities.map(community => (
+        <SidebarItem
+          key={community.slug}
+          icon={Hash}
+          label={community.name}
+          active={currentSlug === community.slug}
+          onClick={() => window.location.href = `/c/${community.slug}`}
+        />
+      ))}
+    </>
+  );
+};
+
+// --- MAIN COMMUNITY PAGE ---
 export default function CommunityPage({ params }: { params: { slug: string } }) {
-
-  // Get the community slug from the URL
   const currentCommunitySlug = params.slug; 
 
-  // ... keep the rest of the code ...
   const [viewMode, setViewMode] = useState('threads'); 
   const [viewProfile, setViewProfile] = useState<string | null>(null);
   
@@ -628,14 +622,15 @@ export default function CommunityPage({ params }: { params: { slug: string } }) 
   const [loginEmail, setLoginEmail] = useState('');
   const [authLoading, setAuthLoading] = useState(false);
 
+  const [communityData, setCommunityData] = useState<any>(null);
   const [posts, setPosts] = useState<any[]>([]);
   const [newPostContent, setNewPostContent] = useState('');
   const [isPosting, setIsPosting] = useState(false);
   const [isPostBoxOpen, setIsPostBoxOpen] = useState(false);
   
-  // New State for Profiles Map
   const [profilesMap, setProfilesMap] = useState<Record<string, any>>({});
 
+  // EFFECT 1: Auth & Initial Load (runs once)
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => setUser(user));
 
@@ -643,23 +638,35 @@ export default function CommunityPage({ params }: { params: { slug: string } }) 
         setUser(session?.user ?? null);
     });
 
-    fetchPosts();
-
     return () => subscription.unsubscribe();
   }, []);
 
-  // UPDATED FETCH FUNCTION to get profiles
-  const fetchPosts = async () => {
-    // 1. Fetch Posts
+  // EFFECT 2: Community Data Fetch (runs whenever slug changes)
+  useEffect(() => {
+    const fetchCommunityDetails = async () => {
+        const { data } = await supabase
+            .from('communities')
+            .select('*')
+            .eq('slug', currentCommunitySlug)
+            .single();
+
+        setCommunityData(data);
+        
+        if (data) fetchPosts(currentCommunitySlug);
+    };
+    fetchCommunityDetails();
+  }, [currentCommunitySlug]);
+
+  const fetchPosts = async (slug: string) => {
     const { data: postsData } = await supabase
       .from('posts')
       .select('*')
+      .eq('community_slug', slug)
       .order('created_at', { ascending: false });
 
     if (postsData) {
         setPosts(postsData);
         
-        // 2. Get unique usernames and fetch their profiles
         const usernames = [...new Set(postsData.map(p => p.user_display_name))];
         
         const { data: profilesData } = await supabase
@@ -668,10 +675,12 @@ export default function CommunityPage({ params }: { params: { slug: string } }) 
             .in('username', usernames);
         
         if (profilesData) {
-            // Convert array to a map { "username": { profile_data } } for easy lookup
             const newMap = profilesData.reduce((acc, p) => ({ ...acc, [p.username]: p }), {});
             setProfilesMap(newMap);
         }
+    } else {
+        setPosts([]); 
+        setProfilesMap({});
     }
   };
 
@@ -709,13 +718,13 @@ export default function CommunityPage({ params }: { params: { slug: string } }) 
     const { error } = await supabase.from('posts').insert({
         content: newPostContent,
         user_display_name: user.email.split('@')[0], 
-        community_slug: 'currentCommunitySlug'
+        community_slug: currentCommunitySlug // Dynamic slug used here!
     });
 
     if (error) {
         alert("Error posting: " + error.message);
     } else {
-        await fetchPosts(); 
+        await fetchPosts(currentCommunitySlug); 
         setNewPostContent('');
         setIsPostBoxOpen(false);
     }
@@ -725,7 +734,7 @@ export default function CommunityPage({ params }: { params: { slug: string } }) 
   return (
     <div className="flex h-screen bg-[#F0F2F5] text-gray-900 font-sans overflow-hidden">
       
-      {/* HEADER */}
+      {/* HEADER (Unchanged) */}
       <header className="h-14 bg-white shadow-sm fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-4 border-b border-gray-200">
          <div className="flex items-center gap-3 w-64">
             <div className="w-9 h-9 bg-blue-600 rounded-full flex items-center justify-center text-white">
@@ -762,7 +771,7 @@ export default function CommunityPage({ params }: { params: { slug: string } }) 
          </div>
       </header>
 
-      {/* LOGIN MODAL */}
+      {/* LOGIN MODAL (Unchanged) */}
       {isLoginOpen && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
             <div className="bg-white w-full max-w-md rounded-2xl p-6 shadow-2xl relative animate-in zoom-in-95 duration-200">
@@ -801,7 +810,7 @@ export default function CommunityPage({ params }: { params: { slug: string } }) 
               icon={HomeIcon} 
               label="Home Feed" 
               active={viewMode === 'threads' || viewMode === 'lounge'} 
-              onClick={() => setViewMode('threads')} 
+              onClick={() => window.location.href = `/c/future-tech`} // Redirects to default slug
             />
             
             <SidebarItem icon={Users} label="Friends" />
@@ -814,12 +823,15 @@ export default function CommunityPage({ params }: { params: { slug: string } }) 
             />
 
             <div className="border-t border-gray-200 my-2"></div>
-<CommunityList currentSlug={currentCommunitySlug} />
+            
+            {/* DYNAMIC COMMUNITY LIST */}
+            <CommunityList currentSlug={currentCommunitySlug} />
          </div>
 
          <div className="flex-1 flex justify-center overflow-y-auto lg:ml-[280px] lg:mr-[320px] w-full p-4 custom-scrollbar">
             <div className="w-full max-w-[680px] pb-20">
                
+               {/* BANNER (DYNAMIC CONTENT) */}
                {viewMode !== 'market' && (
                  <div className="bg-white rounded-xl shadow-sm border border-gray-200 mb-6 overflow-hidden">
                     <div className="h-32 bg-gradient-to-r from-blue-600 to-indigo-700"></div>
@@ -832,8 +844,8 @@ export default function CommunityPage({ params }: { params: { slug: string } }) 
                            </div>
                            <button className="px-4 py-2 bg-gray-200 text-gray-700 font-semibold rounded-md text-sm">Joined</button>
                         </div>
-                        <h1 className="text-2xl font-bold text-gray-900">Future Tech</h1>
-                        <p className="text-gray-600 mt-3 text-sm border-t border-gray-100 pt-3">Discussing the bleeding edge of technology.</p>
+                        <h1 className="text-2xl font-bold text-gray-900">{communityData?.name || 'Loading...'}</h1>
+                        <p className="text-gray-600 mt-3 text-sm border-t border-gray-100 pt-3">{communityData?.description || 'Loading community details...'}</p>
                     </div>
                     <div className="px-4 flex border-t border-gray-200">
                         <TabButton active={viewMode === 'threads'} onClick={() => setViewMode('threads')} label="Posts" />
@@ -842,19 +854,18 @@ export default function CommunityPage({ params }: { params: { slug: string } }) 
                  </div>
                )}
 
+               {/* CONTENT AREA */}
+               
                {viewMode === 'market' && (
                  <MarketplaceView user={user} />
                )}
 
                {viewMode === 'threads' && (
                   <div className="animate-in fade-in duration-300">
-                      
-                      {/* --- CREATE POST BOX --- */}
                       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 mb-4">
                          <div className="flex gap-3">
                             {user ? (
                                 <div className="w-10 h-10 rounded-full bg-indigo-600 flex items-center justify-center text-white text-xs shrink-0">
-                                    {/* FIX: Use custom avatar if available, otherwise fallback to initial letter */}
                                     {profilesMap[user.email.split('@')[0]]?.avatar_url ? (
                                         <img src={profilesMap[user.email.split('@')[0]].avatar_url} alt="avatar" className="w-full h-full rounded-full object-cover" />
                                     ) : (
@@ -898,7 +909,6 @@ export default function CommunityPage({ params }: { params: { slug: string } }) 
                          </div>
                       </div>
                       
-                      {/* THREAD LIST */}
                       {posts.length === 0 ? (
                          <div className="text-center py-10 text-gray-500 bg-white rounded-lg border border-gray-200 border-dashed">
                              <p>No posts yet. Be the first to start the conversation!</p>
@@ -918,7 +928,7 @@ export default function CommunityPage({ params }: { params: { slug: string } }) 
                )}
 
                {viewMode === 'lounge' && (
-                  <ChatLounge communitySlug="currentCommunitySlug" user={user} />
+                  <ChatLounge communitySlug={currentCommunitySlug} user={user} />
                )}
             </div>
          </div>
