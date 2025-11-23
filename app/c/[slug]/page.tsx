@@ -7,6 +7,36 @@ import {
   Share2, Send, Home as HomeIcon, TrendingUp, ThumbsUp, LogIn, LogOut, X, Loader2,
   Plus, DollarSign 
 } from 'lucide-react';
+// --- DYNAMIC SIDEBAR LIST COMPONENT ---
+const CommunityList = ({ currentSlug }: { currentSlug: string }) => {
+  const [communities, setCommunities] = useState<any[]>([]);
+
+  useEffect(() => {
+    const fetchCommunities = async () => {
+      // Fetches all communities from the DB
+      const { data } = await supabase.from('communities').select('*').order('name', { ascending: true });
+      if (data) setCommunities(data);
+    };
+    fetchCommunities();
+  }, []);
+
+  // Maps the fetched data to SidebarItem components
+  return (
+    <>
+      <span className="text-gray-500 font-semibold text-[13px] px-3 mt-2 mb-1">Your Communities</span>
+      {communities.map(community => (
+        <SidebarItem
+          key={community.slug}
+          icon={Hash}
+          label={community.name}
+          active={currentSlug === community.slug}
+          // Note: Clicking redirects to the new dynamic path /c/[slug]
+          onClick={() => window.location.href = `/c/${community.slug}`}
+        />
+      ))}
+    </>
+  );
+};
 
 // --- USER PROFILE MODAL ---
 const UserProfile = ({ username, currentUser, onClose }: any) => {
@@ -784,8 +814,7 @@ export default function CommunityPage({ params }: { params: { slug: string } }) 
             />
 
             <div className="border-t border-gray-200 my-2"></div>
-            <span className="text-gray-500 font-semibold text-[13px] px-3 mt-2 mb-1">Your Communities</span>
-            <SidebarItem icon={Hash} label="Future Tech" active={viewMode === 'threads' || viewMode === 'lounge'} onClick={() => setViewMode('threads')} />
+<CommunityList currentSlug={currentCommunitySlug} />
          </div>
 
          <div className="flex-1 flex justify-center overflow-y-auto lg:ml-[280px] lg:mr-[320px] w-full p-4 custom-scrollbar">
