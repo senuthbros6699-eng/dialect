@@ -117,11 +117,14 @@ const ThreadCard = ({ post, currentUser }: any) => {
     checkLikeStatus();
   }, [currentUser, post.id]);
 
-  const toggleLike = async () => {
+ const toggleLike = async () => {
     if (!currentUser) return alert("Please sign in to like posts!");
     
     const newLikedState = !liked;
-    const newCount = newLikedState ? likeCount + 1 : likeCount - 1;
+    
+    // 🛡️ SAFETY FIX: Use Math.max to prevent negative numbers
+    const newCount = newLikedState ? likeCount + 1 : Math.max(0, likeCount - 1);
+    
     setLiked(newLikedState);
     setLikeCount(newCount);
 
@@ -199,7 +202,8 @@ const ThreadCard = ({ post, currentUser }: any) => {
             liked ? 'text-blue-600 bg-blue-50' : 'text-gray-500 hover:bg-gray-50'
           }`}
         >
-          <ThumbsUp className={`w-5 h-5 ${liked ? 'fill-current' : ''}`} /> {likeCount}
+          <ThumbsUp className={`w-5 h-5 ${liked ? 'fill-current' : ''}`} /> {/* Force the display to be at least 0 */}
+{Math.max(0, likeCount)}
         </button>
         <button 
           onClick={toggleComments}
